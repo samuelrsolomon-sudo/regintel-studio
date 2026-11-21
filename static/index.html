@@ -489,17 +489,18 @@ ${digest}`;
     }
 
 
-  function apiBase() {
-    const el = document.getElementById("backendUrl");
-    const raw = (el && el.value ? el.value : localStorage.getItem("regintel_backend_url") || "").trim().replace(/\/+$/, "");
-    if (el && !el.value && raw) el.value = raw;
-    if (raw) localStorage.setItem("regintel_backend_url", raw);
-    return raw;
-  }
-  function apiUrl(path) {
-    const base = apiBase();
-    return base ? base + path : path;
-  }
+    function getBackendBase() {
+      const el = document.getElementById("backendUrl");
+      const saved = localStorage.getItem("regintel_backend_url") || "http://127.0.0.1:8080";
+      if (el && !el.value) el.value = saved;
+      const raw = (el && el.value ? el.value : saved).trim().replace(/\/+$/, "");
+      if (raw) localStorage.setItem("regintel_backend_url", raw);
+      return raw;
+    }
+    function apiUrl(path) {
+      const base = getBackendBase();
+      return base ? base + path : path;
+    }
 
     initUI();
   </script>
