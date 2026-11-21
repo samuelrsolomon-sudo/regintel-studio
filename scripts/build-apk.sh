@@ -176,3 +176,19 @@ if [ -d "app/build/outputs/apk/debug" ] || [ -f "gradlew" ]; then
   gradle assembleDebug --no-daemon || true
 fi
 echo "Updated scripts/build-apk.sh"
+
+pushd android-apk-build >/dev/null
+if command -v gradle >/dev/null 2>&1; then
+  gradle wrapper --gradle-version 8.7 --no-daemon || true
+fi
+if [ -x "./gradlew" ]; then
+  chmod +x ./gradlew
+  ./gradlew assembleDebug --no-daemon
+elif command -v gradle >/dev/null 2>&1; then
+  gradle assembleDebug --no-daemon
+else
+  echo "ERROR: Neither ./gradlew nor gradle found on runner"
+  exit 1
+fi
+ls -lh app/build/outputs/apk/debug/app-debug.apk
+popd >/dev/null
