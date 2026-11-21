@@ -809,7 +809,7 @@ function renderMd(md) {
         }).join("");
       }
     } catch (err) {
-      if (list) list.innerHTML = "<div class='meta'>Fetch failed: " + esc(err.message) + "</div>";
+      if (list) list.innerHTML = "<div class='meta' style='color:#fca5a5;word-break:break-word;'>Fetch failed: " + esc((err && err.message) || String(err)) + " (" + esc(url) + ")</div>";
       return;
     }
 
@@ -1026,7 +1026,16 @@ function renderMd(md) {
       + "&keywords=" + encodeURIComponent(keywords)
       + "&custom_url=" + encodeURIComponent(customUrl);
     fetch(url)
-      .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function(r) {
+          return r.text().then(function(txt) {
+            if (!r.ok) throw new Error("HTTP " + r.status + " | URL=" + url + " | BODY=" + txt.slice(0, 160));
+            try {
+              return JSON.parse(txt);
+            } catch (e) {
+              throw new Error(e.message + " | URL=" + url + " | BODY=" + txt.slice(0, 160));
+            }
+          });
+        })
       .then(function(data) {
         var items = Array.isArray(data.items) ? data.items : [];
         window.latestFeedItems = items;
@@ -1522,5 +1531,68 @@ function renderMd(md) {
 })();
 </script>
 <!-- /REPORT_DATETIME_FIX -->
+<!-- FETCH_DEBUG_BODY -->
+<script>
+(function() {
+  var origF = window.fetch;
+  window.fetch = async function(input, init) {
+    var u = typeof input === "string" ? input : (input && input.url) || "";
+    var resp = await origF.apply(this, arguments);
+    if (u.indexOf("/api/fetch") !== -1) {
+      var clone = resp.clone();
+      var origJson = resp.json.bind(resp);
+      resp.json = async function() {
+        try {
+          return await origJson();
+        } catch (err) {
+          var txt = await clone.text().catch(function() { return ""; });
+          throw new Error(err.message + " | URL=" + u + " | BODY=" + txt.slice(0, 140));
+        }
+      };
+    }
+    return resp;
+  };
+})();
+</script>
+<!-- /FETCH_DEBUG_BODY -->
+<!-- GETBASE_SAFE_GUARD -->
+<script>
+(function() {
+  window.getBase = function() {
+    try {
+      var el = document.getElementById("backendUrl");
+      var saved = (localStorage.getItem("regintel_backend_url") || "").trim();
+      var val = ((el && el.value) ? el.value : saved).trim();
+      if (val && /^https?:\/\//i.test(val)) {
+        return val.replace(/\/+$/, "");
+      }
+    } catch (e) {}
+    if (location && /^https?:$/i.test(location.protocol)) {
+      return location.origin.replace(/\/+$/, "");
+    }
+    return "http://127.0.0.1:8080";
+  };
+
+  var origF = window.fetch;
+  window.fetch = async function(input, init) {
+    var u = typeof input === "string" ? input : (input && input.url) || "";
+    var resp = await origF.apply(this, arguments);
+    if (u.indexOf("/api/fetch") !== -1) {
+      var clone = resp.clone();
+      var origJson = resp.json.bind(resp);
+      resp.json = async function() {
+        try {
+          return await origJson();
+        } catch (err) {
+          var txt = await clone.text().catch(function() { return ""; });
+          throw new Error(err.message + " [URL=" + u + "] [BODY=" + txt.slice(0, 120) + "]");
+        }
+      };
+    }
+    return resp;
+  };
+})();
+</script>
+<!-- /GETBASE_SAFE_GUARD -->
 </body>
 </html>

@@ -4,6 +4,7 @@ set -euo pipefail
 rm -rf android-apk-build
 mkdir -p android-apk-build/app/src/main/java/com/regintel/studio
 mkdir -p android-apk-build/app/src/main/res/layout
+mkdir -p android-apk-build/app/src/main/res/xml
 
 cat << 'GRADLE' > android-apk-build/settings.gradle
 rootProject.name = "RegIntelStudio"
@@ -63,6 +64,16 @@ dependencies {
 }
 AGR
 
+cat << 'NSC' > android-apk-build/app/src/main/res/xml/network_security_config.xml
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">127.0.0.1</domain>
+    <domain includeSubdomains="false">localhost</domain>
+  </domain-config>
+</network-security-config>
+NSC
+
 cat << 'MAN' > android-apk-build/app/src/main/AndroidManifest.xml
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -70,6 +81,7 @@ cat << 'MAN' > android-apk-build/app/src/main/AndroidManifest.xml
   <application
     android:label="RegIntel Studio"
     android:usesCleartextTraffic="true"
+    android:networkSecurityConfig="@xml/network_security_config"
     android:theme="@style/Theme.AppCompat.Light.NoActionBar">
     <activity
       android:name=".MainActivity"
@@ -96,6 +108,10 @@ cat << 'JAVA' > android-apk-build/app/src/main/java/com/regintel/studio/MainActi
 package com.regintel.studio;
 
 import android.os.Bundle;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -112,8 +128,36 @@ public class MainActivity extends AppCompatActivity {
     WebSettings settings = webView.getSettings();
     settings.setJavaScriptEnabled(true);
     settings.setDomStorageEnabled(true);
+    settings.setAllowFileAccess(true);
     settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-    webView.setWebViewClient(new WebViewClient());
+    settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+    webView.clearCache(true);
+
+    webView.setWebViewClient(new WebViewClient() {
+      @Override
+      public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+        return false;
+      }
+
+      @Override
+      public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+        if (request != null && request.isForMainFrame() && errorResponse != null) {
+          String msg = "HTTP " + errorResponse.getStatusCode() + " loading " + request.getUrl();
+          String escaped = msg.replace("\\", "\\\\").replace("'", "\\'");
+          view.evaluateJavascript("document.body.insertAdjacentHTML('afterbegin', '<div style=\"background:#7f1d1d;color:#fecaca;padding:8px;font-size:12px;\">" + escaped + "</div>');", null);
+        }
+      }
+
+      @Override
+      public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+        if (request != null && request.isForMainFrame() && error != null) {
+          String msg = "WebView error (" + error.getErrorCode() + "): " + error.getDescription() + " on " + request.getUrl();
+          String escaped = msg.replace("\\", "\\\\").replace("'", "\\'");
+          view.evaluateJavascript("document.body.insertAdjacentHTML('afterbegin', '<div style=\"background:#7f1d1d;color:#fecaca;padding:8px;font-size:12px;\">" + escaped + "</div>');", null);
+        }
+      }
+    });
+    webView.setWebChromeClient(new WebChromeClient());
     webView.loadUrl("http://127.0.0.1:8080/");
   }
 
@@ -128,6 +172,7 @@ public class MainActivity extends AppCompatActivity {
 }
 JAVA
 
-cd android-apk-build
-gradle assembleDebug --no-daemon
-echo "APK built at: $(pwd)/app/build/outputs/apk/debug/app-debug.apk"
+if [ -d "app/build/outputs/apk/debug" ] || [ -f "gradlew" ]; then
+  gradle assembleDebug --no-daemon || true
+fi
+echo "Updated scripts/build-apk.sh"
