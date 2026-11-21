@@ -668,5 +668,859 @@ ${digest}`;
   }
 })();
 </script>
+
+<script>
+/* DIRECT_FETCH_BIND */
+(function() {
+  function getBase() {
+    try {
+      var bEl = document.getElementById("backendUrl");
+      var saved = localStorage.getItem("regintel_backend_url") || "";
+      var v = ((bEl && bEl.value) ? bEl.value : saved).trim().replace(/\/+$/, "");
+      if (v) return v;
+    } catch (e) {}
+    return (location.protocol === "http:" || location.protocol === "https:") ? "" : "http://127.0.0.1:8080";
+  }
+
+  function esc(s) {
+    return String(s || "").replace(/[&<>"']/g, function(c) {
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  function formatInlineClean(txt) {
+  var s = String(txt || "").replace(/\*\*/g, "").replace(/__/g, "");
+  return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+function renderMd(md) {
+  var raw = String(md || "").replace(/\r\n/g, "\n");
+  var lines = raw.split("\n");
+  var out = [];
+  var i = 0;
+  var tableStyle = "width:100%;border-collapse:collapse;margin:10px 0;font-size:13px;";
+  var thStyle = "border:1px solid #334155;padding:7px 9px;text-align:left;background:#1e293b;color:#f8fafc;font-weight:600;";
+  var tdStyle = "border:1px solid #334155;padding:7px 9px;text-align:left;vertical-align:top;";
+
+  while (i < lines.length) {
+    var line = lines[i].trim();
+    if (!line) {
+      i++;
+      continue;
+    }
+    if (line.indexOf("|") !== -1 && i + 1 < lines.length && /^\|?\s*:?-{2,}:?(\s*\|\s*:?-{2,}:?)+\s*\|?$/.test(lines[i + 1].trim())) {
+      var headers = line.replace(/^\||\|$/g, "").split("|").map(function(c) { return formatInlineClean(c.trim()); });
+      i += 2;
+      var rowsHtml = "";
+      while (i < lines.length && lines[i].trim().indexOf("|") !== -1) {
+        var rowLine = lines[i].trim();
+        if (/^\|?\s*:?-{2,}:?(\s*\|\s*:?-{2,}:?)+\s*\|?$/.test(rowLine)) {
+          i++;
+          continue;
+        }
+        var cells = rowLine.replace(/^\||\|$/g, "").split("|").map(function(c) { return formatInlineClean(c.trim()); });
+        rowsHtml += "<tr>" + cells.map(function(c) { return "<td style='" + tdStyle + "'>" + c + "</td>"; }).join("") + "</tr>";
+        i++;
+      }
+      out.push("<div style='overflow-x:auto;'><table style='" + tableStyle + "'><thead><tr>" +
+        headers.map(function(h) { return "<th style='" + thStyle + "'>" + h + "</th>"; }).join("") +
+        "</tr></thead><tbody>" + rowsHtml + "</tbody></table></div>");
+      continue;
+    }
+
+    var headingMatch = line.match(/^#{1,6}\s+(.*)$/);
+    if (headingMatch) {
+      var hText = headingMatch[1].replace(/\*\*/g, "").trim();
+      out.push("<div style='margin:14px 0 6px;font-weight:700;font-size:15px;color:#93c5fd;border-bottom:1px solid #334155;padding-bottom:4px;'>" + formatInlineClean(hText) + "</div>");
+      i++;
+      continue;
+    }
+
+    var bulletMatch = line.match(/^[-*•]\s+(.*)$/);
+    if (bulletMatch) {
+      var items = [];
+      while (i < lines.length && lines[i].trim().match(/^[-*•]\s+(.*)$/)) {
+        var bm = lines[i].trim().match(/^[-*•]\s+(.*)$/);
+        items.push("<li style='margin:4px 0;'>" + formatInlineClean(bm[1]) + "</li>");
+        i++;
+      }
+      out.push("<ul style='margin:6px 0 10px 18px;padding:0;'>" + items.join("") + "</ul>");
+      continue;
+    }
+
+    var paraLines = [];
+    while (i < lines.length) {
+      var cur = lines[i].trim();
+      if (!cur || cur.indexOf("|") !== -1 || /^#{1,6}\s+/.test(cur) || /^[-*•]\s+/.test(cur)) {
+        break;
+      }
+      paraLines.push(cur.replace(/\*\*/g, ""));
+      i++;
+    }
+    if (paraLines.length) {
+      out.push("<p style='margin:6px 0;line-height:1.5;'>" + formatInlineClean(paraLines.join(" ")) + "</p>");
+    }
+  }
+  return out.join("") || "<div class='meta'>No formatted content returned.</div>";
+}
+
+  async function doPipeline(withAI, ev) {
+    if (ev) { ev.preventDefault(); ev.stopImmediatePropagation(); }
+    var srcEl = document.getElementById("feedSource");
+    var source = srcEl ? (srcEl.value || "").trim() : "";
+    var kwEl = document.getElementById("openKeywords");
+    var keywords = kwEl ? (kwEl.value || "").trim() : "";
+    var custEl = document.getElementById("customFeedUrl");
+    var customUrl = custEl ? (custEl.value || "").trim() : "";
+    var card = document.getElementById("feedCard");
+    var list = document.getElementById("feedList");
+    var cnt = document.getElementById("feedCount");
+
+    if (card) card.style.display = "block";
+    if (!source) {
+      if (list) list.innerHTML = "<div class='meta'>Select a feed source first.</div>";
+      return;
+    }
+    if (list) list.innerHTML = "<div class='meta'>Fetching: " + esc(source) + "...</div>";
+
+    var url = getBase() + "/api/fetch?source=" + encodeURIComponent(source)
+      + "&keywords=" + encodeURIComponent(keywords)
+      + "&custom_url=" + encodeURIComponent(customUrl);
+
+    var items = [];
+    try {
+      var res = await fetch(url);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      var data = await res.json();
+      items = data.items || [];
+      window.latestItems = items;
+      if (cnt) cnt.textContent = items.length;
+      if (!items.length) {
+        if (list) list.innerHTML = "<div class='meta'>" + esc(data.note || data.error || "0 items returned.") + "</div>";
+        return;
+      }
+      if (list) {
+        list.innerHTML = items.map(function(it, i) {
+          return "<div class='feed-item'>"
+            + "<div><a href='" + esc(it.link) + "' target='_blank'>" + (i + 1) + ". " + esc(it.title) + "</a></div>"
+            + "<div class='meta'>" + esc(it.published) + "</div>"
+            + "<div style='font-size:0.88rem;color:#cbd5e1;'>" + esc(it.summary) + "</div>"
+            + "</div>";
+        }).join("");
+      }
+    } catch (err) {
+      if (list) list.innerHTML = "<div class='meta'>Fetch failed: " + esc(err.message) + "</div>";
+      return;
+    }
+
+    if (!withAI) return;
+
+    var apiKey = ((document.getElementById("apiKey") || {}).value || localStorage.getItem("reg_api_key") || "").trim();
+    var apiBase = ((document.getElementById("apiBase") || {}).value || "https://velona.in/gateway/v1/inference/run").trim();
+    var modelId = ((document.getElementById("modelId") || {}).value || "").trim();
+    var depth = ((document.getElementById("reportDepth") || {}).value || "Executive Summary").trim();
+
+    var reportCard = document.getElementById("reportCard");
+    var reportOut = document.getElementById("reportOutput");
+    var streamStatus = document.getElementById("streamStatus");
+    if (reportCard) reportCard.style.display = "block";
+
+    if (!apiKey) {
+      if (reportOut) reportOut.innerHTML = "<div class='meta'>Please enter your Personal API Key first.</div>";
+      return;
+    }
+
+    if (streamStatus) streamStatus.textContent = "(Streaming live...)";
+    if (reportOut) reportOut.innerHTML = "<div class='meta'>Connecting to " + esc(modelId || "AI model") + "...</div>";
+
+    var digest = items.slice(0, 10).map(function(it, i) {
+      return (i + 1) + ". " + it.title + " (" + it.published + ")\nURL: " + it.link + "\nSummary: " + it.summary;
+    }).join("\n\n");
+
+    var prompt = "Analyze these regulatory updates from " + source + " at depth level: " + depth + ".
+"
+    + "Keyword Filter: " + (keywords || "None (Top Recent Updates)") + ".
+"
+    + "Formatting rules: Do NOT use ## headings or ** bold markdown markers anywhere. Use clean plain-text section labels followed by a colon and use structured Markdown pipe tables (| ... |) for comparisons, impacts, and action plans.
+"
+    + "Provide:
+"
+    + "Executive Signal Summary: concise overview.
+"
+    + "Regulatory Impact Matrix:
+"
+    + "| Update / Authority | Modality & Scope | Regulatory & CMC/Clinical Impact | Priority Action & Timeline |
+"
+    + "| --- | --- | --- | --- |
+"
+    + "Technical & CMC/RA Takeaways tailored to " + depth + ":
+"
+    + "| Focus Area | Key Requirement | Risk / Compliance Impact | Reference URL |
+"
+    + "| --- | --- | --- | --- |
+"
+    + "Updates:
+" + digest;
+
+    try {
+      var aiRes = await fetch(getBase() + "/api/analyze-stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_base: apiBase,
+          api_key: apiKey,
+          model: modelId,
+          prompt: prompt
+        })
+      });
+      if (!aiRes.ok || !aiRes.body) {
+        var errTxt = await aiRes.text().catch(function() { return ""; });
+        throw new Error("HTTP " + aiRes.status + (errTxt ? ": " + errTxt : ""));
+      }
+      var reader = aiRes.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = "";
+      var fullText = "";
+      var doneStream = false;
+
+      while (!doneStream) {
+        var chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        var parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
+        for (var i = 0; i < parts.length; i++) {
+          var line = parts[i].trim();
+          if (!line.startsWith("data:")) continue;
+          var payloadStr = line.slice(5).trim();
+          if (payloadStr === "[DONE]") {
+            doneStream = true;
+            break;
+          }
+          try {
+            var obj = JSON.parse(payloadStr);
+            if (obj.error) {
+              throw new Error(obj.error);
+            }
+            if (obj.delta) {
+              fullText += obj.delta;
+              window.latestMarkdown = fullText;
+              if (reportOut) { reportOut.innerHTML = renderMd(fullText); }
+            }
+          } catch (parseErr) {
+            if (parseErr && parseErr.message && parseErr.message.indexOf("JSON") === -1) {
+              throw parseErr;
+            }
+          }
+        }
+      }
+      if (!fullText && buffer.trim()) {
+        fullText = buffer.trim();
+        window.latestMarkdown = fullText;
+        if (reportOut) { reportOut.innerHTML = renderMd(fullText); }
+      }
+      if (streamStatus) streamStatus.textContent = "(Complete)";
+    } catch (err) {
+      if (streamStatus) streamStatus.textContent = "(Error)";
+      if (reportOut) reportOut.innerHTML = "<div class='meta'>AI Report Error: " + esc(err.message) + "</div>";
+    }
+  }
+
+  function bindButtons() {
+    var btns = Array.prototype.slice.call(document.querySelectorAll("button"));
+    btns.forEach(function(b) {
+      var txt = (b.textContent || "").toLowerCase();
+      var oc = (b.getAttribute("onclick") || "");
+      if (oc.indexOf("runPipeline(false)") !== -1 || (txt.indexOf("fetch") !== -1 && txt.indexOf("ai") === -1 && txt.indexOf("report") === -1)) {
+        b.removeAttribute("onclick");
+        b.addEventListener("click", function(ev) { doPipeline(false, ev); }, true);
+      } else if (oc.indexOf("runPipeline(true)") !== -1 || (txt.indexOf("ai") !== -1 || txt.indexOf("report") !== -1)) {
+        b.removeAttribute("onclick");
+        b.addEventListener("click", function(ev) { doPipeline(true, ev); }, true);
+      }
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bindButtons);
+  } else {
+    bindButtons();
+  }
+})();
+</script>
+<!-- DIRECT_BUTTON_WIRING -->
+<script>
+(function() {
+  function wireButtons() {
+    var btns = Array.prototype.slice.call(document.querySelectorAll("button"));
+    btns.forEach(function(btn) {
+      if (btn.dataset.regWired) return;
+      var txt = (btn.textContent || "").toLowerCase();
+      if (txt.indexOf("ai impact report") !== -1 || txt.indexOf("generate") !== -1) {
+        btn.dataset.regWired = "1";
+        btn.addEventListener("click", function(ev) {
+          if (typeof doPipeline === "function") doPipeline(true, ev);
+        });
+      } else if (txt.trim() === "fetch" || txt.indexOf("fetch") === 0) {
+        btn.dataset.regWired = "1";
+        btn.addEventListener("click", function(ev) {
+          if (typeof doPipeline === "function") doPipeline(false, ev);
+        });
+      }
+    });
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", wireButtons);
+  } else {
+    wireButtons();
+  }
+})();
+</script>
+<!-- FEED_DIAG_BANNER -->
+<script>
+(function() {
+  function escD(s) {
+    return String(s || "").replace(/[&<>"']/g, function(c) {
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
+    });
+  }
+  function showDiag(msg) {
+    var el = document.getElementById("feedList");
+    var card = document.getElementById("feedCard");
+    if (card) card.style.display = "block";
+    if (el) el.innerHTML = "<div class='meta' style='color:#fca5a5;'>" + escD(msg) + "</div>";
+  }
+  window.addEventListener("error", function(e) {
+    showDiag("JS Error: " + e.message + " (line " + e.lineno + ")");
+  });
+  window.addEventListener("unhandledrejection", function(e) {
+    var r = e.reason && e.reason.message ? e.reason.message : String(e.reason || "Promise rejected");
+    showDiag("Async Error: " + r);
+  });
+})();
+</script>
+<!-- /FEED_DIAG_BANNER -->
+<!-- RUN_PIPELINE_ALIAS -->
+<script>
+(function() {
+  window.runPipeline = function(withAI, ev) {
+    if (typeof doPipeline === "function") {
+      return doPipeline(withAI, ev);
+    }
+    var srcEl = document.getElementById("feedSource");
+    var kwEl = document.getElementById("openKeywords");
+    var custEl = document.getElementById("customFeedUrl");
+    var card = document.getElementById("feedCard");
+    var list = document.getElementById("feedList");
+    var cnt = document.getElementById("feedCount");
+    var source = srcEl ? (srcEl.value || "").trim() : "";
+    var keywords = kwEl ? (kwEl.value || "").trim() : "";
+    var customUrl = custEl ? (custEl.value || "").trim() : "";
+    if (card) card.style.display = "block";
+    if (!source) {
+      if (list) list.innerHTML = "<div class='meta'>Select a feed source first.</div>";
+      return;
+    }
+    if (list) list.innerHTML = "<div class='meta'>Fetching: " + source + "...</div>";
+    var url = "/api/fetch?source=" + encodeURIComponent(source)
+      + "&keywords=" + encodeURIComponent(keywords)
+      + "&custom_url=" + encodeURIComponent(customUrl);
+    fetch(url)
+      .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function(data) {
+        var items = Array.isArray(data.items) ? data.items : [];
+        window.latestFeedItems = items;
+        if (cnt) cnt.textContent = String(items.length);
+        if (!list) return;
+        if (!items.length) {
+          list.innerHTML = "<div class='meta'>" + (data.note || data.error || "0 items returned.") + "</div>";
+          return;
+        }
+        list.innerHTML = items.map(function(it, i) {
+          return "<div class='feed-item' style='margin-bottom:10px;'>"
+            + "<div><a href='" + (it.link || "#") + "' target='_blank' rel='noopener'>" + (i + 1) + ". " + (it.title || "Untitled") + "</a></div>"
+            + (it.published ? "<div class='meta'>" + it.published + "</div>" : "")
+            + (it.summary ? "<div style='font-size:0.88em;opacity:0.9;'>" + it.summary + "</div>" : "")
+            + "</div>";
+        }).join("");
+      })
+      .catch(function(err) {
+        if (list) list.innerHTML = "<div class='meta' style='color:#fca5a5;'>Fetch failed: " + err.message + "</div>";
+      });
+  };
+})();
+</script>
+<!-- /RUN_PIPELINE_ALIAS -->
+<!-- SAVE_CONFIG_SHIM -->
+<script>
+(function() {
+  window.saveConfig = function() {
+    try {
+      var ep = document.getElementById("apiBase");
+      var mdl = document.getElementById("modelId");
+      var key = document.getElementById("apiKey");
+      var bUrl = document.getElementById("backendUrl");
+      if (ep && ep.value) localStorage.setItem("regintel_api_base", ep.value.trim());
+      if (mdl && mdl.value) localStorage.setItem("regintel_model_id", mdl.value.trim());
+      if (key && key.value) localStorage.setItem("reg_api_key", key.value.trim());
+      if (bUrl && bUrl.value) localStorage.setItem("regintel_backend_url", bUrl.value.trim());
+    } catch (e) {}
+  };
+})();
+</script>
+<!-- /SAVE_CONFIG_SHIM -->
+<!-- AI_REPORT_BUTTON_FIX -->
+<script>
+(function() {
+  function escR(s) {
+    return String(s || "").replace(/[&<>"']/g, function(c) {
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  async function runAIReportDirect(ev) {
+    if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+
+    var srcEl = document.getElementById("feedSource");
+    var kwEl = document.getElementById("openKeywords");
+    var custEl = document.getElementById("customFeedUrl");
+    var card = document.getElementById("feedCard");
+    var list = document.getElementById("feedList");
+    var cnt = document.getElementById("feedCount");
+    var source = srcEl ? (srcEl.value || "").trim() : "";
+    var keywords = kwEl ? (kwEl.value || "").trim() : "";
+    var customUrl = custEl ? (custEl.value || "").trim() : "";
+
+    if (card) card.style.display = "block";
+    if (!source) {
+      if (list) list.innerHTML = "<div class='meta'>Select a feed source first.</div>";
+      return;
+    }
+
+    var items = Array.isArray(window.latestFeedItems) ? window.latestFeedItems : [];
+    if (!items.length) {
+      if (list) list.innerHTML = "<div class='meta'>Fetching: " + escR(source) + "...</div>";
+      var fUrl = "/api/fetch?source=" + encodeURIComponent(source)
+        + "&keywords=" + encodeURIComponent(keywords)
+        + "&custom_url=" + encodeURIComponent(customUrl);
+      var fRes = await fetch(fUrl);
+      if (!fRes.ok) throw new Error("Feed fetch HTTP " + fRes.status);
+      var fData = await fRes.json();
+      items = Array.isArray(fData.items) ? fData.items : [];
+      window.latestFeedItems = items;
+      if (cnt) cnt.textContent = String(items.length);
+      if (list) {
+        list.innerHTML = items.length ? items.map(function(it, idx) {
+          return "<div class='feed-item' style='margin-bottom:10px;'>"
+            + "<div><a href='" + escR(it.link || "#") + "' target='_blank' rel='noopener'>" + (idx + 1) + ". " + escR(it.title || "Untitled") + "</a></div>"
+            + (it.published ? "<div class='meta'>" + escR(it.published) + "</div>" : "")
+            + (it.summary ? "<div style='font-size:0.88em;opacity:0.9;'>" + escR(it.summary) + "</div>" : "")
+            + "</div>";
+        }).join("") : "<div class='meta'>0 items returned.</div>";
+      }
+    }
+
+    var keyEl = document.getElementById("apiKey");
+    var baseEl = document.getElementById("apiBase");
+    var modelEl = document.getElementById("modelId");
+    var depthEl = document.getElementById("reportDepth");
+    var reportCard = document.getElementById("reportCard");
+    var reportOut = document.getElementById("reportOutput") || document.getElementById("reportOut");
+    var streamStatus = document.getElementById("streamStatus");
+
+    if (reportCard) reportCard.style.display = "block";
+
+    var apiKey = ((keyEl && keyEl.value) ? keyEl.value : (localStorage.getItem("reg_api_key") || "")).trim();
+    var apiBase = ((baseEl && baseEl.value) ? baseEl.value : (localStorage.getItem("regintel_api_base") || "https://velona.in/gateway/v1/inference/run")).trim();
+    var modelId = ((modelEl && modelEl.value) ? modelEl.value : (localStorage.getItem("regintel_model_id") || "deepseek/deepseek-v4-flash-0731")).trim();
+    var depth = ((depthEl && depthEl.value) ? depthEl.value : "Standard Impact (Balanced RA & CMC)").trim();
+
+    if (!apiKey) {
+      if (reportOut) reportOut.innerHTML = "<div class='meta'>Please enter and save your Personal API Key first.</div>";
+      return;
+    }
+
+    if (streamStatus) streamStatus.textContent = "Streaming live...";
+    if (reportOut) reportOut.innerHTML = "<div class='meta'>Connecting to " + escR(modelId) + " for AI Impact Report...</div>";
+
+    var digest = items.slice(0, 10).map(function(it, i) {
+      return (i + 1) + ". " + (it.title || "") + " (" + (it.published || "") + ")\nURL: " + (it.link || "") + "\nSummary: " + (it.summary || "");
+    }).join("\n\n");
+
+    var prompt = "Analyze these regulatory updates from " + source + " at depth level: " + depth + ".\n"
+      + "Keyword Filter: " + (keywords || "None (Top Recent Updates)") + ".\n"
+      + "Formatting rules: Do NOT use ## headings or ** bold markdown markers anywhere. Use clean plain-text section labels followed by a colon and use structured Markdown pipe tables (| ... |) for comparisons, impacts, and action plans.\n"
+      + "Provide:\n"
+      + "Executive Signal Summary: concise overview.\n"
+      + "Regulatory Impact Matrix:\n"
+      + "| Update / Authority | Modality & Scope | Regulatory & CMC/Clinical Impact | Priority Action & Timeline |\n"
+      + "| --- | --- | --- | --- |\n"
+      + "Technical & CMC/RA Takeaways tailored to " + depth + ":\n"
+      + "| Focus Area | Key Requirement | Risk / Compliance Impact | Reference URL |\n"
+      + "| --- | --- | --- | --- |\n"
+      + "Updates:\n" + digest;
+
+    try {
+      var res = await fetch("/api/analyze-stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_base: apiBase,
+          api_key: apiKey,
+          model: modelId,
+          prompt: prompt
+        })
+      });
+      if (!res.ok || !res.body) {
+        var errTxt = await res.text().catch(function() { return ""; });
+        throw new Error("Stream HTTP " + res.status + (errTxt ? ": " + errTxt : ""));
+      }
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buf = "";
+      var fullText = "";
+      while (true) {
+        var chunk = await reader.read();
+        if (chunk.done) break;
+        buf += decoder.decode(chunk.value, { stream: true });
+        var parts = buf.split("\n\n");
+        buf = parts.pop() || "";
+        for (var i = 0; i < parts.length; i++) {
+          var lines = parts[i].split("\n");
+          for (var j = 0; j < lines.length; j++) {
+            var line = lines[j].trim();
+            if (!line.startsWith("data:")) continue;
+            var payload = line.slice(5).trim();
+            if (!payload || payload === "[DONE]") continue;
+            try {
+              var obj = JSON.parse(payload);
+              if (obj.error) throw new Error(obj.error);
+              var delta = obj.delta || (obj.choices && obj.choices[0] && obj.choices[0].delta && obj.choices[0].delta.content) || "";
+              if (delta) {
+                fullText += delta;
+                window.latestReportMd = fullText;
+                if (reportOut) {
+                  reportOut.innerHTML = (typeof renderMd === "function") ? renderMd(fullText) : ("<pre style='white-space:pre-wrap;'>" + escR(fullText) + "</pre>");
+                }
+              }
+            } catch (pe) {
+              if (pe.message && pe.message.indexOf("JSON") === -1) throw pe;
+            }
+          }
+        }
+      }
+      if (!fullText && buf.trim()) {
+        fullText = buf.trim();
+        window.latestReportMd = fullText;
+        if (reportOut) {
+          reportOut.innerHTML = (typeof renderMd === "function") ? renderMd(fullText) : ("<pre style='white-space:pre-wrap;'>" + escR(fullText) + "</pre>");
+        }
+      }
+      if (streamStatus) streamStatus.textContent = "Complete";
+    } catch (err) {
+      if (streamStatus) streamStatus.textContent = "Error";
+      if (reportOut) reportOut.innerHTML = "<div class='meta' style='color:#fca5a5;'>AI Impact Report error: " + escR(err.message) + "</div>";
+    }
+  }
+
+  function attachAIButton() {
+    var btns = Array.prototype.slice.call(document.querySelectorAll("button"));
+    btns.forEach(function(btn) {
+      var txt = (btn.textContent || "").toLowerCase();
+      if (txt.indexOf("ai impact report") !== -1 || txt.indexOf("generate") !== -1) {
+        btn.removeAttribute("onclick");
+        btn.addEventListener("click", function(ev) {
+          runAIReportDirect(ev).catch(function(err) {
+            var ro = document.getElementById("reportOutput") || document.getElementById("reportOut");
+            if (ro) ro.innerHTML = "<div class='meta' style='color:#fca5a5;'>AI Report error: " + escR(err.message) + "</div>";
+          });
+        }, true);
+      }
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", attachAIButton);
+  } else {
+    attachAIButton();
+  }
+})();
+</script>
+<!-- /AI_REPORT_BUTTON_FIX -->
+<!-- LIVE_TABLE_NO_MD_FIX -->
+<script>
+(function() {
+  function escT(s) {
+    return String(s || "").replace(/[&<>"']/g, function(c) {
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  function cleanPlain(s) {
+    return String(s || "")
+      .replace(/^#{1,6}\s*/gm, "")
+      .replace(/\*\*/g, "")
+      .trim();
+  }
+
+  window.renderMd = function(rawText) {
+    var txt = cleanPlain(rawText);
+    if (!txt) return "<div class='meta'>Waiting for stream tokens...</div>";
+    var lines = txt.split(/\r?\n/);
+    var out = [];
+    var i = 0;
+
+    var tblStyle = "width:100%;border-collapse:collapse;margin:10px 0;font-size:0.88em;";
+    var thStyle = "border:1px solid #334155;padding:7px 9px;background:#1e293b;color:#e2e8f0;text-align:left;";
+    var tdStyle = "border:1px solid #334155;padding:7px 9px;vertical-align:top;color:#cbd5e1;";
+
+    while (i < lines.length) {
+      var line = lines[i].trim();
+      if (!line) {
+        i++;
+        continue;
+      }
+
+      if (line.indexOf("|") !== -1) {
+        var rows = [];
+        while (i < lines.length && lines[i].trim().indexOf("|") !== -1) {
+          var rowStr = lines[i].trim().replace(/^\|+|\|+$/g, "");
+          var isSep = /^[\s:\-|]+$/.test(rowStr) && rowStr.indexOf("-") !== -1;
+          if (!isSep) {
+            var cells = rowStr.split("|").map(function(c) { return escT(cleanPlain(c)); });
+            rows.push(cells);
+          }
+          i++;
+        }
+        if (rows.length > 0) {
+          var headers = rows[0];
+          var bodyRows = rows.slice(1);
+          var thead = "<thead><tr>" + headers.map(function(h) {
+            return "<th style='" + thStyle + "'>" + h + "</th>";
+          }).join("") + "</tr></thead>";
+          var tbody = "<tbody>" + bodyRows.map(function(r) {
+            return "<tr>" + r.map(function(c) {
+              return "<td style='" + tdStyle + "'>" + c + "</td>";
+            }).join("") + "</tr>";
+          }).join("") + "</tbody>";
+          out.push("<div style='overflow-x:auto;'><table style='" + tblStyle + "'>" + thead + tbody + "</table></div>");
+        }
+        continue;
+      }
+
+      if (/^[-*•]\s+/.test(line)) {
+        var bullets = [];
+        while (i < lines.length && /^[-*•]\s+/.test(lines[i].trim())) {
+          bullets.push("<li style='margin:4px 0;'>" + escT(cleanPlain(lines[i].trim().replace(/^[-*•]\s+/, ""))) + "</li>");
+          i++;
+        }
+        out.push("<ul style='margin:6px 0 10px 18px;padding:0;'>" + bullets.join("") + "</ul>");
+        continue;
+      }
+
+      var colonIdx = line.indexOf(":");
+      if (colonIdx > 0 && colonIdx < 65 && line.indexOf("http") !== 0) {
+        var label = escT(cleanPlain(line.slice(0, colonIdx)));
+        var rest = escT(cleanPlain(line.slice(colonIdx + 1)));
+        out.push("<div style='margin:10px 0 4px;font-weight:700;color:#93c5fd;'>" + label + (rest ? ":" : ":") + "</div>"
+          + (rest ? "<p style='margin:4px 0 8px;line-height:1.5;'>" + rest + "</p>" : ""));
+        i++;
+        continue;
+      }
+
+      out.push("<p style='margin:6px 0;line-height:1.5;'>" + escT(cleanPlain(line)) + "</p>");
+      i++;
+    }
+
+    return out.join("") || "<div class='meta'>No content rendered.</div>";
+  };
+
+  var origFetch = window.fetch;
+  window.fetch = async function(input, init) {
+    var url = typeof input === "string" ? input : (input && input.url) || "";
+    if (url.indexOf("/api/analyze-stream") !== -1 && init && typeof init.body === "string") {
+      try {
+        var payload = JSON.parse(init.body);
+        if (typeof payload.prompt === "string") {
+          var extraRule = "\nSTRICT OUTPUT FORMAT:\n"
+            + "- NEVER use ## or ** anywhere in your response.\n"
+            + "- Present structured findings using Markdown pipe tables (| Col 1 | Col 2 | ... |) with a header separator row (| --- | --- |).\n"
+            + "- Use plain text section titles ending in a colon (e.g. Executive Signal Summary:).\n";
+          if (payload.prompt.indexOf("NEVER use ## or **") === -1) {
+            payload.prompt = extraRule + payload.prompt;
+            init = Object.assign({}, init, { body: JSON.stringify(payload) });
+          }
+        }
+      } catch (e) {}
+    }
+    return origFetch.apply(this, arguments);
+  };
+})();
+</script>
+<!-- /LIVE_TABLE_NO_MD_FIX -->
+<!-- DOCX_SYNC_FIX -->
+<script>
+(function() {
+  function syncMarkdownVars() {
+    if (typeof window.latestReportMd === "string" && window.latestReportMd) {
+      window.latestMarkdown = window.latestReportMd;
+      try { latestMarkdown = window.latestReportMd; } catch (e) {}
+    }
+  }
+
+  var origRenderMd = window.renderMd;
+  if (typeof origRenderMd === "function" && !origRenderMd._docxWrapped) {
+    var wrapped = function(txt) {
+      if (typeof txt === "string" && txt.trim()) {
+        window.latestReportMd = txt;
+        window.latestMarkdown = txt;
+        try { latestMarkdown = txt; } catch (e) {}
+      }
+      return origRenderMd.apply(this, arguments);
+    };
+    wrapped._docxWrapped = true;
+    window.renderMd = wrapped;
+  }
+
+  function cleanDocxText(s) {
+    return String(s || "")
+      .replace(/^#{1,6}\s*/gm, "")
+      .replace(/\*\*/g, "")
+      .trim();
+  }
+
+  async function runDocxDownload(ev) {
+    if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+    syncMarkdownVars();
+    var outEl = document.getElementById("reportOutput") || document.getElementById("reportOut");
+    var raw = window.latestMarkdown || window.latestReportMd || (outEl ? (outEl.innerText || outEl.textContent || "") : "");
+    var content = cleanDocxText(raw);
+    if (!content) {
+      alert("Generate an Impact Report first.");
+      return;
+    }
+    var srcEl = document.getElementById("feedSource");
+    var depthEl = document.getElementById("reportDepth");
+    var source = srcEl ? (srcEl.value || "") : "";
+    var depth = depthEl ? (depthEl.value || "") : "";
+    var base = (typeof getBase === "function") ? getBase() : ((typeof apiUrl === "function") ? apiUrl("").replace(/\/+$/, "") : "");
+
+    try {
+      var res = await fetch(base + "/api/export-docx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Regulatory Intelligence Impact Analysis",
+          source: source,
+          depth: depth,
+          content: content
+        })
+      });
+      if (!res.ok) {
+        var errTxt = await res.text().catch(function() { return ""; });
+        throw new Error("HTTP " + res.status + (errTxt ? " - " + errTxt : ""));
+      }
+      var blob = await res.blob();
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "RegIntel_Impact_" + new Date().toISOString().slice(0, 10) + ".docx";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function() {
+        URL.revokeObjectURL(url);
+        if (a.parentNode) a.parentNode.removeChild(a);
+      }, 1500);
+    } catch (err) {
+      alert("DOCX export failed: " + err.message);
+    }
+  }
+
+  window.downloadDocx = runDocxDownload;
+
+  function bindDocxButtons() {
+    var btns = Array.prototype.slice.call(document.querySelectorAll("button, a"));
+    btns.forEach(function(btn) {
+      var oc = (btn.getAttribute("onclick") || "").toLowerCase();
+      var txt = (btn.textContent || "").toLowerCase();
+      if (oc.indexOf("downloaddocx") !== -1 || txt.indexOf("docx") !== -1) {
+        if (btn.dataset.docxSyncBound) return;
+        btn.dataset.docxSyncBound = "1";
+        btn.removeAttribute("onclick");
+        btn.addEventListener("click", runDocxDownload, true);
+      }
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bindDocxButtons);
+  } else {
+    bindDocxButtons();
+  }
+})();
+</script>
+<!-- /DOCX_SYNC_FIX -->
+<!-- REPORT_DATETIME_FIX -->
+<script>
+(function() {
+  function formatNowStamp() {
+    var d = new Date();
+    var pad = function(n) { return n < 10 ? "0" + n : String(n); };
+    var dateStr = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+    var timeStr = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    var tzName = "";
+    try {
+      tzName = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    } catch (e) {}
+    return dateStr + " " + timeStr + (tzName ? " (" + tzName + ")" : "");
+  }
+
+  window.getReportTimestamp = formatNowStamp;
+
+  var origFetch = window.fetch;
+  window.fetch = async function(input, init) {
+    var url = typeof input === "string" ? input : (input && input.url) || "";
+    if (url.indexOf("/api/analyze-stream") !== -1 && init && typeof init.body === "string") {
+      try {
+        var payload = JSON.parse(init.body);
+        if (typeof payload.prompt === "string") {
+          var stamp = formatNowStamp();
+          var dtRule = "\nDATE & TIME REQUIREMENTS:\n"
+            + "- Report Generated At: " + stamp + "\n"
+            + "- Include a Report Metadata / Date-Time line near the top showing when the report was generated (" + stamp + ").\n"
+            + "- Include a Date / Time column or field in your tables and summaries showing each regulatory update's publication date/time (or 'Not specified in feed' if absent).\n"
+            + "- Keep formatting plain text with colon section headers and Markdown pipe tables; do NOT use ## or **.\n";
+          if (payload.prompt.indexOf("DATE & TIME REQUIREMENTS:") === -1) {
+            var enrichedItems = Array.isArray(window.latestFeedItems) ? window.latestFeedItems.slice(0, 10) : [];
+            var dtDigest = enrichedItems.map(function(it, idx) {
+              return (idx + 1) + ". " + (it.title || "")
+                + " | Published Date/Time: " + (it.published || it.pubDate || it.updated || "Not specified in feed")
+                + " | URL: " + (it.link || "");
+            }).join("\n");
+            payload.prompt = dtRule + payload.prompt
+              + (dtDigest ? "\nFeed Item Timestamps:\n" + dtDigest : "");
+            init = Object.assign({}, init, { body: JSON.stringify(payload) });
+          }
+        }
+      } catch (e) {}
+    }
+    return origFetch.apply(this, arguments);
+  };
+
+  var prevRender = window.renderMd;
+  if (typeof prevRender === "function" && !prevRender._dtWrapped) {
+    var wrappedRender = function(rawText) {
+      var stamp = formatNowStamp();
+      var headerLine = "Report Generated: " + stamp + "\n\n";
+      var bodyText = String(rawText || "");
+      var combined = bodyText.indexOf("Report Generated:") === 0 ? bodyText : (headerLine + bodyText);
+      return prevRender.call(this, combined);
+    };
+    wrappedRender._dtWrapped = true;
+    window.renderMd = wrappedRender;
+  }
+})();
+</script>
+<!-- /REPORT_DATETIME_FIX -->
 </body>
 </html>

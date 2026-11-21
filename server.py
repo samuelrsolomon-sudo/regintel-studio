@@ -285,7 +285,10 @@ def fetch_rss(
 
 @app.post("/api/analyze-stream")
 def analyze_items_stream(req: AnalyzeRequest):
-    resolved_key = (req.api_key or "").strip() or os.environ.get("VELONA_API_KEY", "").strip()
+    raw_key = (req.api_key or "").strip()
+    if raw_key.lower().startswith("dk_"):
+        raw_key = ""
+    resolved_key = raw_key or os.environ.get("VELONA_API_KEY", "").strip()
     headers = {
         "Authorization": f"Bearer {resolved_key}",
         "Content-Type": "application/json"
@@ -347,7 +350,14 @@ def analyze_items_stream(req: AnalyzeRequest):
 
         yield f"data: {json.dumps({'error': f'LLM request failed: {last_err}'})}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 def _clean_text(s: str) -> str:
     s = re.sub(r"\*{2,}", "", s)
@@ -366,6 +376,17 @@ def _add_formatted_runs(p, text: str):
         else:
             p.add_run(part)
 
+
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+def _current_report_stamp() -> str:
+    try:
+        now = datetime.now(ZoneInfo("Asia/Kolkata"))
+        return now.strftime("%Y-%m-%d %H:%M:%S IST")
+    except Exception:
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+# REPORT_DATETIME_DOCX_STAMP
 @app.post("/api/export-docx")
 def export_docx(req: ExportDocxRequest):
     doc = Document()
