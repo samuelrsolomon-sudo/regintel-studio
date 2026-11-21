@@ -1594,5 +1594,25 @@ function renderMd(md) {
 })();
 </script>
 <!-- /GETBASE_SAFE_GUARD -->
+<!-- APK_LOC_BADGE -->
+<script>
+(function() {
+  function showLoc() {
+    if (document.getElementById("apkLocBar")) return;
+    var bar = document.createElement("div");
+    bar.id = "apkLocBar";
+    bar.style.cssText = "font-size:11px;color:#94a3b8;padding:4px 8px;background:#0f172a;border-bottom:1px solid #1e293b;word-break:break-all;";
+    var b = (typeof window.getBase === "function") ? window.getBase() : "<no-getBase>";
+    bar.textContent = "Origin: " + (window.location ? window.location.href : "?") + " | Base: " + b;
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", showLoc);
+  } else {
+    showLoc();
+  }
+})();
+</script>
+<!-- /APK_LOC_BADGE -->
 </body>
 </html>
