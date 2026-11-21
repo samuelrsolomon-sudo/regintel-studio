@@ -3,6 +3,7 @@
   "appName": "RegIntel Studio",
   "webDir": "static",
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "http",
+    "cleartext": true
   }
 }
