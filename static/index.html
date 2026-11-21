@@ -276,7 +276,7 @@
       document.getElementById("apiKey").value = savedKey;
       updateKeyBadge(savedKey);
 
-      fetch("/api/feeds").then(r => r.json()).then(data => {
+      fetch(apiUrl("/api/feeds").then(r => r.json()).then(data => {
         const sel = document.getElementById("feedSource");
         (data.sources || []).forEach(src => {
           const opt = document.createElement("option");
@@ -371,7 +371,7 @@ SOURCE ITEMS:
 ${digest}`;
 
       try {
-        const aiRes = await fetch("/api/analyze-stream", {
+        const aiRes = await fetch(apiUrl("/api/analyze-stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ api_base: apiBase, api_key: apiKey, model: modelId, prompt: prompt })
@@ -444,7 +444,7 @@ ${digest}`;
       }
       const source = document.getElementById("feedSource").value;
       const depth = document.getElementById("reportDepth").value;
-      const res = await fetch("/api/export-docx", {
+      const res = await fetch(apiUrl("/api/export-docx", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -487,6 +487,19 @@ ${digest}`;
         "• Windows (Edge/Chrome): Address Bar -> Install App (or Menu -> Apps -> Install)"
       );
     }
+
+
+  function apiBase() {
+    const el = document.getElementById("backendUrl");
+    const raw = (el && el.value ? el.value : localStorage.getItem("regintel_backend_url") || "").trim().replace(/\/+$/, "");
+    if (el && !el.value && raw) el.value = raw;
+    if (raw) localStorage.setItem("regintel_backend_url", raw);
+    return raw;
+  }
+  function apiUrl(path) {
+    const base = apiBase();
+    return base ? base + path : path;
+  }
 
     initUI();
   </script>
