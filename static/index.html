@@ -346,33 +346,50 @@
     }
 
     async function runPipeline(withAI) {
-      const source = document.getElementById("feedSource").value;
-      const openTerms = document.getElementById("openKeywords").value.split(",").map(s => s.trim()).filter(Boolean);
-      const combined = [...new Set([...selectedPresets, ...openTerms])].join(",");
+    const sourceEl = document.getElementById("feedSource");
+    const source = sourceEl ? sourceEl.value : "";
+    const openEl = document.getElementById("openKeywords");
+    const openTerms = (openEl ? openEl.value : "").split(",").map(s => s.trim()).filter(Boolean);
+    const combined = [...new Set([...selectedPresets, ...openTerms])].join(",");
 
-      const feedCard = document.getElementById("feedCard");
-      const feedList = document.getElementById("feedList");
-      feedCard.style.display = "block";
-      feedList.innerHTML = "<div class='meta'>Fetching live agency feed...</div>";
+    const feedCard = document.getElementById("feedCard");
+    const feedList = document.getElementById("feedList");
+    if (feedCard) feedCard.style.display = "block";
+    if (feedList) feedList.innerHTML = "<div class='meta'>Fetching live agency feed...</div>";
 
-      const customUrl = document.getElementById("customFeedUrl").value.trim();
-      const res = await fetch(`/api/fetch?source=${encodeURIComponent(source)}&keywords=${encodeURIComponent(combined)}&custom_url=${encodeURIComponent(customUrl)}`);
+    try {
+      if (!source) {
+        if (feedList) feedList.innerHTML = "<div class='meta'>Please select a feed source first.</div>";
+        return;
+      }
+      const customEl = document.getElementById("customFeedUrl");
+      const customUrl = customEl ? customEl.value.trim() : "";
+      const path = `/api/fetch?source=${encodeURIComponent(source)}&keywords=${encodeURIComponent(combined)}&custom_url=${encodeURIComponent(customUrl)}`;
+      const url = (typeof apiUrl === "function") ? apiUrl(path) : path;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       latestItems = data.items || [];
-      document.getElementById("feedCount").textContent = latestItems.length;
+      const countEl = document.getElementById("feedCount");
+      if (countEl) countEl.textContent = latestItems.length;
 
       if (!latestItems.length) {
-        feedList.innerHTML = `<div class='meta'>${escapeHtml(data.note || "No updates matched your keyword filter.")}</div>`;
+        if (feedList) feedList.innerHTML = `<div class='meta'>${escapeHtml(data.note || data.error || "No updates matched your keyword filter.")}</div>`;
         return;
       }
 
-      feedList.innerHTML = latestItems.map((it, i) => `
-        <div class="feed-item">
-          <div><a href="${it.link}" target="_blank">${i + 1}. ${escapeHtml(it.title)}</a></div>
-          <div class="meta">${escapeHtml(it.published)}</div>
-          <div style="font-size:0.88rem; color:#cbd5e1;">${escapeHtml(it.summary)}</div>
-        </div>
-      `).join("");
+      if (feedList) {
+        feedList.innerHTML = latestItems.map((it, i) => `
+          <div class="feed-item">
+            <div><a href="${it.link}" target="_blank">${i + 1}. ${escapeHtml(it.title)}</a></div>
+            <div class="meta">${escapeHtml(it.published)}</div>
+            <div style="font-size:0.88rem; color:#cbd5e1;">${escapeHtml(it.summary)}</div>
+          </div>
+        `).join("");
+      }
+    } catch (err) {
+      if (feedList) feedList.innerHTML = `<div class='meta'>Fetch error: ${escapeHtml(err.message)}</div>`;
+    }
 
       if (!withAI) return;
 
@@ -546,5 +563,110 @@ ${digest}`;
 
     initUI();
   </script>
+
+<script>
+(function() {
+  function bindKeyAck() {
+    var inp = document.getElementById("apiKey");
+    var badge = document.getElementById("keyStatus");
+    if (!inp) return;
+    var ack = document.getElementById("keyAckMsg");
+    if (!ack && inp.parentNode) {
+      ack = document.createElement("div");
+      ack.id = "keyAckMsg";
+      ack.style.fontSize = "0.82rem";
+      ack.style.marginTop = "4px";
+      ack.style.color = "#94a3b8";
+      inp.parentNode.appendChild(ack);
+    }
+    function refresh() {
+      var val = (inp.value || "").trim();
+      try { localStorage.setItem("reg_api_key", val); } catch (e) {}
+      if (typeof updateKeyBadge === "function") {
+        try { updateKeyBadge(val); } catch (e) {}
+      }
+      if (badge) {
+        badge.textContent = val ? "Personal Key Ready" : "No API Key";
+        badge.style.background = val ? "#065f46" : "#991b1b";
+      }
+      if (ack) {
+        ack.textContent = val
+          ? "API key entered and saved (" + val.length + " chars)"
+          : "No API key entered yet";
+        ack.style.color = val ? "#34d399" : "#94a3b8";
+      }
+    }
+    inp.addEventListener("input", refresh);
+    inp.addEventListener("change", refresh);
+    refresh();
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bindKeyAck);
+  } else {
+    bindKeyAck();
+  }
+})();
+</script>
+
+<script>
+/* FORCE_KEY_MSG_V2 */
+(function() {
+  function setupAck() {
+    var inp = document.getElementById("apiKey");
+    var saveBtn = document.querySelector("button.btn-save");
+    if (!inp) return;
+
+    var banner = document.getElementById("regKeyAckV2");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "regKeyAckV2";
+      banner.style.cssText = "margin-top:8px;padding:8px 12px;border-radius:8px;font-size:0.88rem;font-weight:700;";
+      if (saveBtn && saveBtn.parentNode) {
+        saveBtn.parentNode.insertBefore(banner, saveBtn.nextSibling);
+      } else if (inp.parentNode) {
+        inp.parentNode.appendChild(banner);
+      }
+    }
+
+    function paint(reason) {
+      var val = (inp.value || "").trim();
+      try { localStorage.setItem("reg_api_key", val); } catch (e) {}
+      var badge = document.getElementById("keyStatus");
+      if (badge) {
+        badge.textContent = val ? "Personal Key Ready" : "No API Key";
+        badge.style.background = val ? "#065f46" : "#991b1b";
+        badge.style.color = "#ffffff";
+      }
+      if (val) {
+        banner.textContent = "API Key Acknowledged & Saved (" + val.length + " chars)" + (reason ? " • " + reason : "");
+        banner.style.background = "#065f46";
+        banner.style.color = "#ecfdf5";
+        banner.style.border = "1px solid #34d399";
+      } else {
+        banner.textContent = "No API key entered yet";
+        banner.style.background = "#1e293b";
+        banner.style.color = "#cbd5e1";
+        banner.style.border = "1px solid #475569";
+      }
+    }
+
+    ["input", "change", "keyup"].forEach(function(ev) {
+      inp.addEventListener(ev, function() { paint(ev); });
+    });
+    if (saveBtn) {
+      saveBtn.addEventListener("click", function() {
+        setTimeout(function() { paint("saved"); }, 30);
+      });
+    }
+    paint("ready");
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", setupAck);
+  } else {
+    setupAck();
+  }
+})();
+</script>
 </body>
 </html>
