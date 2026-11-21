@@ -93,7 +93,49 @@
     <div class="grid">
       <div>
         <label>Select Regulatory Feed Source</label>
-        <select id="feedSource"></select>
+        <select id="feedSource"><option value="">Loading feeds...</option></select>
+<script>
+(function() {
+  function populateFeeds() {
+    var sel = document.getElementById("feedSource");
+    if (!sel) return;
+    var base = "";
+    try {
+      var bEl = document.getElementById("backendUrl");
+      var saved = localStorage.getItem("regintel_backend_url") || "http://127.0.0.1:8080";
+      base = ((bEl && bEl.value) ? bEl.value : saved).trim().replace(/\/+$/, "");
+    } catch (e) { base = "http://127.0.0.1:8080"; }
+    fetch((base || "") + "/api/feeds")
+      .then(function(r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function(data) {
+        var list = Array.isArray(data) ? data : (data.sources || data.feeds || []);
+        sel.innerHTML = "";
+        if (!list.length) {
+          sel.innerHTML = '<option value="">No sources in response</option>';
+          return;
+        }
+        list.forEach(function(src) {
+          var label = typeof src === "string" ? src : (src.name || src.title || String(src));
+          var opt = document.createElement("option");
+          opt.value = label;
+          opt.textContent = label;
+          sel.appendChild(opt);
+        });
+      })
+      .catch(function(err) {
+        sel.innerHTML = '<option value="">Feed err: ' + err.message + '</option>';
+      });
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", populateFeeds);
+  } else {
+    populateFeeds();
+  }
+})();
+</script>
       </div>
       <div>
         <label>Impact Report Depth</label>
