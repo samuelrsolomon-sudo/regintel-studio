@@ -1,0 +1,8 @@
+{
+  "appId": "com.regintel.studio",
+  "appName": "RegIntel Studio",
+  "webDir": "static",
+  "server": {
+    "androidScheme": "https"
+  }
+}

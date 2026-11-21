@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="manifest" href="/static/manifest.json" />
+  <title>RegIntel RSS & Impact Studio</title>
+  <style>
+    :root {
+      --bg: #0b1120; --card: #1e293b; --border: #334155;
+      --text: #f8fafc; --muted: #94a3b8; --accent: #3b82f6; --danger: #ef4444; --ok: #10b981;
+    }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding: 16px; max-width: 1020px; margin-inline: auto; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 16px; }
+    h1 { font-size: 1.25rem; margin: 0; }
+    .badge { font-size: 0.75rem; background: #1d4ed8; padding: 4px 8px; border-radius: 6px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+    input, select, textarea {
+      width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: #0f172a; color: var(--text); font-size: 0.95rem; margin-bottom: 12px;
+    }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .chip {
+      padding: 6px 10px; border-radius: 20px; border: 1px solid var(--border);
+      background: #0f172a; color: var(--muted); font-size: 0.8rem; cursor: pointer; user-select: none;
+    }
+    .chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    button {
+      padding: 12px 16px; border: none; border-radius: 8px; font-weight: 600; font-size: 0.95rem;
+      cursor: pointer; flex: 1; min-width: 180px;
+    }
+    .btn-primary { background: var(--danger); color: white; }
+    .btn-secondary { background: var(--accent); color: white; }
+    .btn-save { background: var(--ok); color: #052e16; max-width: 160px; }
+    .feed-item { border-bottom: 1px solid var(--border); padding: 10px 0; }
+    .feed-item:last-child { border-bottom: none; }
+    .feed-item a { color: #60a5fa; text-decoration: none; font-weight: 600; }
+    .meta { font-size: 0.78rem; color: var(--muted); margin: 4px 0; }
+
+    /* Clean Report Typography & Tables */
+    #reportOutput { line-height: 1.6; font-size: 0.95rem; color: #e2e8f0; }
+    .sec-title { font-size: 1.08rem; font-weight: 700; color: #93c5fd; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #334155; }
+    .sec-title:first-child { margin-top: 0; }
+    .rep-p { margin: 6px 0 10px; }
+    .rep-list { margin: 6px 0 12px 20px; padding: 0; }
+    .rep-list li { margin-bottom: 6px; }
+    .table-wrap { overflow-x: auto; margin: 12px 0 16px; border-radius: 8px; border: 1px solid #475569; }
+    table.impact-table { width: 100%; border-collapse: collapse; min-width: 620px; background: #0f172a; }
+    table.impact-table th { background: #1e3a8a; color: #f8fafc; text-align: left; padding: 10px 12px; font-size: 0.85rem; border-bottom: 1px solid #475569; }
+    table.impact-table td { padding: 10px 12px; font-size: 0.86rem; border-bottom: 1px solid #1e293b; vertical-align: top; }
+    table.impact-table tr:nth-child(even) td { background: #131c31; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>RegIntel RSS &amp; Impact Studio</h1>
+      <div class="meta">Android • Apple iOS/macOS • Microsoft Windows</div>
+    </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+      <button id="installAppBtn" onclick="triggerInstall()" style="min-width:auto; padding:6px 12px; font-size:0.78rem; background:#10b981; color:#052e16;">Install App</button>
+      <span class="badge" id="keyStatus">No API Key</span>
+    </div>
+  </header>
+
+  <div class="card">
+    <label>Personal LLM API Configuration (Stored Locally on Your Device)</label>
+    <div class="grid">
+      <div>
+        <label>API Endpoint (OpenAI-Compatible)</label>
+        <input type="text" id="apiBase" value="https://velona.in/gateway/v1/inference/run" />
+      </div>
+      <div>
+        <label>Model ID</label>
+        <input type="text" id="modelId" value="deepseek/deepseek-v4-flash-0731" />
+      </div>
+      <div>
+        <label>Personal API Key</label>
+        <input type="password" id="apiKey" placeholder="Enter personal API key" />
+      </div>
+    </div>
+    <button class="btn-save" onclick="saveConfig()">Save Key Locally</button>
+  </div>
+
+  <div class="card">
+    <div class="grid">
+      <div>
+        <label>Select Regulatory Feed Source</label>
+        <select id="feedSource"></select>
+      </div>
+      <div>
+        <label>Impact Report Depth</label>
+        <select id="reportDepth">
+          <option value="Executive Signal (Concise & Fast)">Executive Signal (Concise &amp; Fast)</option>
+          <option value="Standard Impact (Balanced RA & CMC)" selected>Standard Impact (Balanced RA &amp; CMC)</option>
+          <option value="Deep Technical & CMC/RA Audit (Granular)">Deep Technical &amp; CMC/RA Audit (Granular)</option>
+        </select>
+      </div>
+    </div>
+
+    <label>Custom RSS / Atom Feed URL (Optional — used if Custom RSS is selected)</label>
+    <input type="text" id="customFeedUrl" placeholder="https://example.org/regulatory-feed.xml" />
+
+    <label>Quick Regulatory Keyword Tags (Tap to Filter Before Execution)</label>
+    <div class="chips" id="presetChips"></div>
+
+    <label>Open Keyword / Product Entry (comma-separated)</label>
+    <input type="text" id="openKeywords" placeholder="e.g., biosimilar, denosumab, CMC, comparability, nitrosamines" />
+
+    <div class="btn-row">
+      <button class="btn-secondary" onclick="runPipeline(false)">Fetch Filtered Live Feed</button>
+      <button class="btn-primary" onclick="runPipeline(true)">Fetch &amp; Generate AI Impact Report</button>
+    </div>
+  </div>
+
+  <div class="card" id="feedCard" style="display:none;">
+    <h3 style="margin-top:0;">Filtered Live Agency Updates (<span id="feedCount">0</span>)</h3>
+    <div id="feedList"></div>
+  </div>
+
+  <div class="card" id="reportCard" style="display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <h3 style="margin:0;">Regulatory Impact Analysis <span class="meta" id="streamStatus" style="display:inline; margin-left:8px;"></span></h3>
+      <div style="display:flex; gap:8px;">
+        <button style="max-width:140px; min-width:110px; padding:8px; background:#334155; color:#fff;" onclick="downloadMd()">Download .md</button>
+        <button style="max-width:150px; min-width:120px; padding:8px; background:#2563eb; color:#fff;" onclick="downloadDocx()">Download .docx</button>
+      </div>
+    </div>
+    <hr style="border-color:var(--border);" />
+    <div id="reportOutput"></div>
+  </div>
+
+  <script>
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js");
+
+    const PRESETS = ["biosimilar", "interchangeability", "CMC", "comparability", "BLA", "MAA", "ADC", "gene therapy", "nitrosamines", "stability", "GMP", "labeling"];
+    const selectedPresets = new Set();
+    let latestItems = [];
+    let latestMarkdown = "";
+
+    function stripNoiseTokens(str) {
+      return (str || "")
+        .replace(/\*{2,}/g, "")
+        .replace(/^#{1,6}\s*/gm, "")
+        .replace(/^\s*[-*_]{3,}\s*$/gm, "");
+    }
+
+    function escapeHtml(s) {
+      return s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function formatInline(s) {
+      let out = escapeHtml(stripNoiseTokens(s));
+      out = out.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
+      out = out.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color:#60a5fa;">$1</a>');
+      return out;
+    }
+
+    function renderFormattedReport(rawText) {
+      const lines = (rawText || "").split("\n");
+      let html = "";
+      let i = 0;
+      let inUl = false;
+      let inOl = false;
+
+      const closeLists = () => {
+        if (inUl) { html += "</ul>"; inUl = false; }
+        if (inOl) { html += "</ol>"; inOl = false; }
+      };
+
+      while (i < lines.length) {
+        const trimmed = lines[i].trim();
+
+        if (!trimmed || /^[-*_]{3,}$/.test(trimmed)) {
+          closeLists();
+          i++;
+          continue;
+        }
+
+        // Markdown table block -> clean HTML table
+        if (trimmed.startsWith("|") && trimmed.indexOf("|", 1) !== -1) {
+          closeLists();
+          const rows = [];
+          while (i < lines.length && lines[i].trim().startsWith("|")) {
+            const rTrim = lines[i].trim().replace(/^\|+|\|+$/g, "");
+            const cells = rTrim.split("|").map(c => c.trim());
+            const isSep = cells.every(c => /^[-:\s]+$/.test(c));
+            if (!isSep) rows.push(cells);
+            i++;
+          }
+          if (rows.length > 0) {
+            const cols = Math.max(...rows.map(r => r.length));
+            html += '<div class="table-wrap"><table class="impact-table"><thead><tr>';
+            for (let c = 0; c < cols; c++) {
+              html += `<th>${formatInline(rows[0][c] || "")}</th>`;
+            }
+            html += "</tr></thead><tbody>";
+            for (let r = 1; r < rows.length; r++) {
+              html += "<tr>";
+              for (let c = 0; c < cols; c++) {
+                html += `<td>${formatInline(rows[r][c] || "")}</td>`;
+              }
+              html += "</tr>";
+            }
+            html += "</tbody></table></div>";
+          }
+          continue;
+        }
+
+        // Heading lines (even if raw # or ## appeared in stream)
+        if (/^#{1,6}\s+/.test(trimmed) || /^(1\.|2\.|3\.|4\.)\s+(Executive Signal Summary|Regulatory Impact Table|Technical & CMC\/RA Takeaways|Actionable Checklist)/i.test(stripNoiseTokens(trimmed))) {
+          closeLists();
+          html += `<div class="sec-title">${formatInline(trimmed)}</div>`;
+          i++;
+          continue;
+        }
+
+        // Bullet items
+        if (/^[-*]\s+/.test(trimmed)) {
+          if (inOl) { html += "</ol>"; inOl = false; }
+          if (!inUl) { html += '<ul class="rep-list">'; inUl = true; }
+          html += `<li>${formatInline(trimmed.replace(/^[-*]\s+/, ""))}</li>`;
+          i++;
+          continue;
+        }
+
+        // Numbered items
+        if (/^\d+\.\s+/.test(trimmed)) {
+          if (inUl) { html += "</ul>"; inUl = false; }
+          if (!inOl) { html += '<ol class="rep-list">'; inOl = true; }
+          html += `<li>${formatInline(trimmed.replace(/^\d+\.\s+/, ""))}</li>`;
+          i++;
+          continue;
+        }
+
+        closeLists();
+        html += `<p class="rep-p">${formatInline(trimmed)}</p>`;
+        i++;
+      }
+
+      closeLists();
+      return html;
+    }
+
+    function initUI() {
+      const chipBox = document.getElementById("presetChips");
+      PRESETS.forEach(tag => {
+        const el = document.createElement("span");
+        el.className = "chip";
+        el.textContent = tag;
+        el.onclick = () => {
+          if (selectedPresets.has(tag)) { selectedPresets.delete(tag); el.classList.remove("active"); }
+          else { selectedPresets.add(tag); el.classList.add("active"); }
+        };
+        chipBox.appendChild(el);
+      });
+
+      let savedBase = localStorage.getItem("reg_api_base") || "https://velona.in/gateway/v1/inference/run";
+      if (savedBase.includes("velona.in") && !savedBase.includes("/gateway/v1/inference/run")) {
+        savedBase = "https://velona.in/gateway/v1/inference/run";
+        localStorage.setItem("reg_api_base", savedBase);
+      }
+      document.getElementById("apiBase").value = savedBase;
+      document.getElementById("modelId").value = localStorage.getItem("reg_model_id") || "deepseek/deepseek-v4-flash-0731";
+      const savedKey = localStorage.getItem("reg_api_key") || "";
+      document.getElementById("apiKey").value = savedKey;
+      updateKeyBadge(savedKey);
+
+      fetch("/api/feeds").then(r => r.json()).then(data => {
+        const sel = document.getElementById("feedSource");
+        (data.sources || []).forEach(src => {
+          const opt = document.createElement("option");
+          opt.value = src; opt.textContent = src;
+          sel.appendChild(opt);
+        });
+      });
+    }
+
+    function updateKeyBadge(k) {
+      const b = document.getElementById("keyStatus");
+      b.textContent = k ? "Personal Key Ready" : "No API Key";
+      b.style.background = k ? "#065f46" : "#991b1b";
+    }
+
+    function saveConfig() {
+      const base = document.getElementById("apiBase").value.trim();
+      const model = document.getElementById("modelId").value.trim();
+      const key = document.getElementById("apiKey").value.trim();
+      localStorage.setItem("reg_api_base", base);
+      localStorage.setItem("reg_model_id", model);
+      localStorage.setItem("reg_api_key", key);
+      updateKeyBadge(key);
+      alert("API configuration saved securely in local device storage.");
+    }
+
+    async function runPipeline(withAI) {
+      const source = document.getElementById("feedSource").value;
+      const openTerms = document.getElementById("openKeywords").value.split(",").map(s => s.trim()).filter(Boolean);
+      const combined = [...new Set([...selectedPresets, ...openTerms])].join(",");
+
+      const feedCard = document.getElementById("feedCard");
+      const feedList = document.getElementById("feedList");
+      feedCard.style.display = "block";
+      feedList.innerHTML = "<div class='meta'>Fetching live agency feed...</div>";
+
+      const customUrl = document.getElementById("customFeedUrl").value.trim();
+      const res = await fetch(`/api/fetch?source=${encodeURIComponent(source)}&keywords=${encodeURIComponent(combined)}&custom_url=${encodeURIComponent(customUrl)}`);
+      const data = await res.json();
+      latestItems = data.items || [];
+      document.getElementById("feedCount").textContent = latestItems.length;
+
+      if (!latestItems.length) {
+        feedList.innerHTML = `<div class='meta'>${escapeHtml(data.note || "No updates matched your keyword filter.")}</div>`;
+        return;
+      }
+
+      feedList.innerHTML = latestItems.map((it, i) => `
+        <div class="feed-item">
+          <div><a href="${it.link}" target="_blank">${i + 1}. ${escapeHtml(it.title)}</a></div>
+          <div class="meta">${escapeHtml(it.published)}</div>
+          <div style="font-size:0.88rem; color:#cbd5e1;">${escapeHtml(it.summary)}</div>
+        </div>
+      `).join("");
+
+      if (!withAI) return;
+
+      const apiKey = document.getElementById("apiKey").value.trim();
+      const apiBase = document.getElementById("apiBase").value.trim();
+      const modelId = document.getElementById("modelId").value.trim();
+      const depth = document.getElementById("reportDepth").value;
+
+      if (!apiKey) {
+        alert("Please enter and save your Personal API Key first.");
+        return;
+      }
+
+      const reportCard = document.getElementById("reportCard");
+      const reportOut = document.getElementById("reportOutput");
+      const streamStatus = document.getElementById("streamStatus");
+      reportCard.style.display = "block";
+      streamStatus.textContent = "(Streaming live...)";
+      latestMarkdown = "";
+      reportOut.innerHTML = `<div class="meta">Connecting to ${escapeHtml(modelId)}...</div>`;
+
+      const digest = latestItems.slice(0, 10).map((it, i) =>
+        `Item ${i + 1}: ${it.title}\nPublished: ${it.published}\nURL: ${it.link}\nSummary: ${it.summary}`
+      ).join("\n\n");
+
+      const prompt = `Analyze these regulatory updates from ${source} at depth level: "${depth}".
+Keyword Filter: ${combined || "None (Top Recent Updates)"}.
+Formatting rules:
+- Do NOT use markdown hash headings (#, ##, ###), horizontal rules (--- or ***), or bold asterisks (**).
+- Use clean section headers and standard pipe tables (| Col 1 | Col 2 | ...) for structured comparisons.
+Provide:
+1. Executive Signal Summary
+2. Regulatory Impact Table (Item | Modality | Compliance Shift | Action & Urgency)
+3. Technical & CMC/RA Takeaways tailored to "${depth}"
+4. Actionable Checklist with exact URLs.
+
+SOURCE ITEMS:
+${digest}`;
+
+      try {
+        const aiRes = await fetch("/api/analyze-stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ api_base: apiBase, api_key: apiKey, model: modelId, prompt: prompt })
+        });
+
+        if (!aiRes.ok || !aiRes.body) {
+          streamStatus.textContent = "(Error)";
+          reportOut.innerHTML = `<div class="meta">Stream HTTP error: ${aiRes.status}</div>`;
+          return;
+        }
+
+        const reader = aiRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || "";
+
+          for (const pkt of parts) {
+            const line = pkt.trim();
+            if (!line.startsWith("data:")) continue;
+            const payloadStr = line.slice(5).trim();
+            if (payloadStr === "[DONE]") {
+              streamStatus.textContent = "(Complete)";
+              break;
+            }
+            try {
+              const obj = JSON.parse(payloadStr);
+              if (obj.error) {
+                latestMarkdown = "Error: " + obj.error;
+                reportOut.innerHTML = `<div class="meta">${escapeHtml(latestMarkdown)}</div>`;
+                streamStatus.textContent = "(Error)";
+                return;
+              }
+              if (obj.delta) {
+                latestMarkdown += obj.delta;
+                reportOut.innerHTML = renderFormattedReport(latestMarkdown);
+              }
+            } catch (_) {}
+          }
+        }
+
+        latestMarkdown = stripNoiseTokens(latestMarkdown);
+        reportOut.innerHTML = renderFormattedReport(latestMarkdown);
+        if (streamStatus.textContent === "(Streaming live...)") {
+          streamStatus.textContent = "(Complete)";
+        }
+      } catch (err) {
+        streamStatus.textContent = "(Error)";
+        reportOut.innerHTML = `<div class="meta">Stream Error: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function downloadMd() {
+      const blob = new Blob([stripNoiseTokens(latestMarkdown)], { type: "text/markdown" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `RegIntel_Impact_${new Date().toISOString().slice(0,10)}.md`;
+      a.click();
+    }
+
+    async function downloadDocx() {
+      if (!latestMarkdown) {
+        alert("Generate an Impact Report first.");
+        return;
+      }
+      const source = document.getElementById("feedSource").value;
+      const depth = document.getElementById("reportDepth").value;
+      const res = await fetch("/api/export-docx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Regulatory Intelligence Impact Analysis",
+          source: source,
+          depth: depth,
+          content: stripNoiseTokens(latestMarkdown)
+        })
+      });
+      if (!res.ok) {
+        alert("DOCX export failed.");
+        return;
+      }
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `RegIntel_Impact_${new Date().toISOString().slice(0,10)}.docx`;
+      a.click();
+    }
+
+
+    let deferredPrompt = null;
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+    });
+
+    async function triggerInstall() {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        return;
+      }
+      alert(
+        "Install RegIntel Studio as a Native App:\n\n" +
+        "• Android (Chrome): Tap Menu (⋮) -> Add to Home screen -> Install\n" +
+        "• Apple iOS/iPadOS (Safari): Tap Share -> Add to Home Screen\n" +
+        "• Apple macOS (Safari): File -> Add to Dock\n" +
+        "• Windows (Edge/Chrome): Address Bar -> Install App (or Menu -> Apps -> Install)"
+      );
+    }
+
+    initUI();
+  </script>
+</body>
+</html>
